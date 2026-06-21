@@ -1,0 +1,141 @@
+# =============================================================================
+# ASSETS CONFIG
+# -----------------------------------------------------------------------------
+# Each asset is keyed by an internal ALIAS (clean, no special chars) so that the
+# regime rules can reference it easily. `ticker` is the Yahoo Finance symbol.
+# `yield: true` marks rate series (handled with a scale-cleaning step).
+#
+# To add an asset: add a line below with a unique alias, its Yahoo ticker, a
+# label and a category. If you want it in a ratio, add the ratio to `ratios`.
+# =============================================================================
+
+assets:
+  # ---- US equities -------------------------------------------------------
+  SPY:  {ticker: "SPY",  label: "S&P 500",            category: "US Equity"}
+  QQQ:  {ticker: "QQQ",  label: "Nasdaq 100",         category: "US Equity"}
+  IWM:  {ticker: "IWM",  label: "Russell 2000",       category: "US Equity"}
+  DIA:  {ticker: "DIA",  label: "Dow Jones",          category: "US Equity"}
+
+  # ---- Global equities ---------------------------------------------------
+  ACWI: {ticker: "ACWI", label: "Global Equities",    category: "Global Equity"}
+  EEM:  {ticker: "EEM",  label: "Emerging Markets",   category: "Global Equity"}
+  FEZ:  {ticker: "FEZ",  label: "Eurozone Equities",  category: "Global Equity"}
+  EWJ:  {ticker: "EWJ",  label: "Japan Equities",     category: "Global Equity"}
+
+  # ---- Sectors -----------------------------------------------------------
+  XLK:  {ticker: "XLK",  label: "Technology",         category: "Sector"}
+  XLF:  {ticker: "XLF",  label: "Financials",         category: "Sector"}
+  XLE:  {ticker: "XLE",  label: "Energy",             category: "Sector"}
+  XLI:  {ticker: "XLI",  label: "Industrials",        category: "Sector"}
+  XLY:  {ticker: "XLY",  label: "Consumer Discr.",    category: "Sector"}
+  XLP:  {ticker: "XLP",  label: "Consumer Staples",   category: "Sector"}
+  XLV:  {ticker: "XLV",  label: "Healthcare",         category: "Sector"}
+  XLU:  {ticker: "XLU",  label: "Utilities",          category: "Sector"}
+  SMH:  {ticker: "SMH",  label: "Semiconductors",     category: "Sector"}
+
+  # ---- Bonds / credit proxies -------------------------------------------
+  TLT:  {ticker: "TLT",  label: "20Y+ Treasuries",    category: "Rates/Credit"}
+  IEF:  {ticker: "IEF",  label: "7-10Y Treasuries",   category: "Rates/Credit"}
+  SHY:  {ticker: "SHY",  label: "1-3Y Treasuries",    category: "Rates/Credit"}
+  LQD:  {ticker: "LQD",  label: "IG Credit",          category: "Rates/Credit"}
+  HYG:  {ticker: "HYG",  label: "High Yield Credit",  category: "Rates/Credit"}
+  TIP:  {ticker: "TIP",  label: "Inflation-Linked",   category: "Rates/Credit"}
+
+  # ---- Yields (scale-cleaned, see data_loader) --------------------------
+  US10Y: {ticker: "^TNX", label: "US 10Y Yield",  category: "Yield", yield: true}
+  US5Y:  {ticker: "^FVX", label: "US 5Y Yield",   category: "Yield", yield: true}
+  US3M:  {ticker: "^IRX", label: "US 13W T-Bill", category: "Yield", yield: true}
+  US30Y: {ticker: "^TYX", label: "US 30Y Yield",  category: "Yield", yield: true}
+
+  # ---- FX ----------------------------------------------------------------
+  DXY:    {ticker: "DX-Y.NYB",  label: "US Dollar Index", category: "FX"}
+  UUP:    {ticker: "UUP",       label: "US Dollar ETF",   category: "FX"}
+  EURUSD: {ticker: "EURUSD=X",  label: "EUR/USD",         category: "FX"}
+  USDJPY: {ticker: "USDJPY=X",  label: "USD/JPY",         category: "FX"}
+  GBPUSD: {ticker: "GBPUSD=X",  label: "GBP/USD",         category: "FX"}
+  AUDUSD: {ticker: "AUDUSD=X",  label: "AUD/USD",         category: "FX"}
+
+  # ---- Commodities -------------------------------------------------------
+  GOLD:   {ticker: "GC=F", label: "Gold",          category: "Commodity"}
+  SILVER: {ticker: "SI=F", label: "Silver",        category: "Commodity"}
+  OIL:    {ticker: "CL=F", label: "WTI Crude",     category: "Commodity"}
+  BRENT:  {ticker: "BZ=F", label: "Brent Crude",   category: "Commodity"}
+  COPPER: {ticker: "HG=F", label: "Copper",        category: "Commodity"}
+  NATGAS: {ticker: "NG=F", label: "Natural Gas",   category: "Commodity"}
+  DBC:    {ticker: "DBC",  label: "Broad Commodities", category: "Commodity"}
+
+  # ---- Volatility --------------------------------------------------------
+  VIX:  {ticker: "^VIX", label: "VIX",            category: "Volatility"}
+  VXX:  {ticker: "VXX",  label: "VIX ETF",        category: "Volatility"}
+
+  # ---- Crypto (optional) -------------------------------------------------
+  BTC:  {ticker: "BTC-USD", label: "Bitcoin",     category: "Crypto"}
+  ETH:  {ticker: "ETH-USD", label: "Ethereum",    category: "Crypto"}
+
+# Relative-strength ratios computed as priceA / priceB (then returns / z-scores).
+ratios:
+  - "QQQ/SPY"
+  - "IWM/SPY"
+  - "EEM/SPY"
+  - "FEZ/SPY"
+  - "XLK/SPY"
+  - "SMH/SPY"
+  - "XLY/XLP"
+  - "XLI/XLU"
+  - "XLE/SPY"
+  - "XLP/SPY"
+  - "XLV/SPY"
+  - "XLU/SPY"
+  - "XLY/SPY"
+  - "HYG/LQD"
+  - "HYG/IEF"
+  - "TLT/SPY"
+  - "GOLD/SPY"
+  - "COPPER/GOLD"
+  - "OIL/COPPER"
+
+# Assets shown (in order) in the "Market moves" table on the dashboard.
+market_table:
+  - SPY
+  - QQQ
+  - IWM
+  - DIA
+  - ACWI
+  - EEM
+  - FEZ
+  - XLK
+  - SMH
+  - XLF
+  - XLE
+  - XLI
+  - XLY
+  - XLP
+  - XLU
+  - XLV
+  - TLT
+  - IEF
+  - LQD
+  - HYG
+  - TIP
+  - GOLD
+  - SILVER
+  - OIL
+  - BRENT
+  - COPPER
+  - NATGAS
+  - DBC
+  - DXY
+  - EURUSD
+  - USDJPY
+  - AUDUSD
+  - GBPUSD
+  - VIX
+  - BTC
+  - ETH
+
+# Yields shown (in order) in the "Rates & yields" table.
+yields_table:
+  - US3M
+  - US5Y
+  - US10Y
+  - US30Y

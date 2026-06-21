@@ -1,0 +1,440 @@
+# =============================================================================
+# REGIMES CONFIG  (fully interpretable, rule-based)
+# -----------------------------------------------------------------------------
+# Feature reference syntax used in `f` and `cf`:
+#   ASSET.metric        e.g. SPY.return_1d, VIX.return_1d, GOLD.return_1d
+#   RATIO.metric        e.g. "HYG/LQD.return_1d", "QQQ/SPY.return_1d"
+#   YIELD.change_1d_bps  e.g. US10Y.change_1d_bps   (also .level, .change_5d_bps)
+#   score.<name>        e.g. score.equity_risk, score.volatility_stress
+#   USD.*               derived: DXY if available else UUP
+#
+# Rule fields (compact, one line each):
+#   n   = human name
+#   f   = feature key (left-hand side)
+#   op  = "<", ">", "<=", ">="
+#   t   = numeric threshold   (OR use `cf` to compare against another feature)
+#   cf  = compare-feature key (right-hand side, e.g. IWM vs SPY)
+#   w   = weight (1 default, 2 for the defining signals)
+#   k   = "c" confirming rule  /  "x" contradicting rule
+#   why = short reason (used to auto-generate the explanation sentence)
+#
+# Scoring:  raw = obtained_confirm_weight / possible_confirm_weight * 100
+#           score = raw * (1 - contradiction_penalty * contra_ratio)
+#                       * (1 - missing_penalty * missing_ratio)
+#   - Missing data (Yahoo ticker unavailable) does NOT count in the denominator
+#     but slightly reduces confidence.
+#   - The % is a MATCH / CONFIDENCE score, not a statistical probability.
+# =============================================================================
+
+settings:
+  contradiction_penalty: 0.35   # full contradictions cut the score by up to 35%
+  missing_penalty: 0.15         # all-missing would cut confidence by up to 15%
+  neutral_threshold: 55         # if best regime < this -> primary = Neutral/Mixed
+  mixed_ceiling: 60             # below this AND close 2nd -> Neutral/Mixed (bias)
+  mixed_gap: 5                  # "close" = best - second < this many points
+  history_table_rows: 10        # last N rows of history shown on the dashboard
+
+regimes:
+
+  # ---------------------------------------------------------------------------
+  - key: risk_on
+    name: "Risk-On / Pro-Growth"
+    tone: green
+    definition: >
+      The market is accepting risk: equities rise, credit tightens, cyclicals
+      and small caps lead, volatility falls and investors are not aggressively
+      bidding for safe havens.
+    rules:
+      - {n: "US equities rising",        f: SPY.return_1d, op: ">", t: 0.50, w: 2, k: c, why: "US equities are rising"}
+      - {n: "Nasdaq rising",             f: QQQ.return_1d, op: ">", t: 0.50, w: 2, k: c, why: "growth/tech is rising"}
+      - {n: "Small caps lead",           f: IWM.return_1d, op: ">", cf: SPY.return_1d, w: 1, k: c, why: "small caps lead (high risk appetite)"}
+      - {n: "EM up",                     f: EEM.return_1d, op: ">", t: 0.0,  w: 1, k: c, why: "emerging markets are up"}
+      - {n: "Credit appetite",           f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "high yield outperforms IG (credit appetite)"}
+      - {n: "Cyclicals > defensives",    f: "XLY/XLP.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "discretionary outperforms staples"}
+      - {n: "Industrials > utilities",   f: "XLI/XLU.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "industrials outperform utilities"}
+      - {n: "Volatility falling",        f: VIX.return_1d, op: "<", t: -3.0, w: 2, k: c, why: "volatility is falling"}
+      - {n: "Soft dollar",               f: USD.return_1d, op: "<=", t: 0.0, w: 1, k: c, why: "the dollar is soft (supports risk)"}
+      - {n: "Copper firm",               f: COPPER.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "copper is firm (growth signal)"}
+      - {n: "Credit score positive",     f: score.credit_risk, op: ">", t: 20, w: 1, k: c, why: "the credit risk score is positive"}
+      - {n: "Equity score strong",       f: score.equity_risk, op: ">", t: 30, w: 1, k: c, why: "the equity risk score is strong"}
+      # contradictions
+      - {n: "Volatility spiking",        f: VIX.return_1d, op: ">", t: 5.0, w: 2, k: x}
+      - {n: "Credit deteriorating",      f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Dollar surging",            f: USD.return_1d, op: ">", t: 0.4, w: 1, k: x}
+      - {n: "Equities falling",          f: SPY.return_1d, op: "<", t: 0.0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: risk_off
+    name: "Risk-Off / Market Stress"
+    tone: red
+    definition: >
+      Investors reduce risk and buy protection: equities fall, volatility rises,
+      credit deteriorates, cyclicals underperform and the dollar may bid as
+      investors seek liquidity and safe havens.
+    rules:
+      - {n: "US equities falling",       f: SPY.return_1d, op: "<", t: -0.75, w: 2, k: c, why: "US equities are falling"}
+      - {n: "Nasdaq falling",            f: QQQ.return_1d, op: "<", t: -0.75, w: 2, k: c, why: "growth/tech is falling"}
+      - {n: "Small caps lag",            f: IWM.return_1d, op: "<", cf: SPY.return_1d, w: 1, k: c, why: "small caps underperform"}
+      - {n: "EM weak",                   f: EEM.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "emerging markets are weak"}
+      - {n: "Volatility spike",          f: VIX.return_1d, op: ">", t: 5.0, w: 2, k: c, why: "demand for protection is rising"}
+      - {n: "Credit deteriorating",      f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "high yield underperforms IG"}
+      - {n: "Defensives > cyclicals",    f: "XLY/XLP.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "staples outperform discretionary"}
+      - {n: "Utilities > industrials",   f: "XLI/XLU.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "utilities outperform industrials"}
+      - {n: "Dollar bid",                f: USD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "the dollar is bid (liquidity / protection)"}
+      - {n: "Gold bid",                  f: GOLD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "gold is bid (safe haven)"}
+      - {n: "Treasuries bid",            f: TLT.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "Treasuries are bid (flight to quality)"}
+      - {n: "Equity score weak",         f: score.equity_risk, op: "<", t: -30, w: 1, k: c, why: "the equity risk score is weak"}
+      - {n: "Volatility score high",     f: score.volatility_stress, op: ">", t: 30, w: 1, k: c, why: "the volatility stress score is high"}
+      - {n: "Credit score weak",         f: score.credit_risk, op: "<", t: -20, w: 1, k: c, why: "the credit risk score is weak"}
+      # contradictions
+      - {n: "Equities rallying",         f: SPY.return_1d, op: ">", t: 0.75, w: 2, k: x}
+      - {n: "Volatility collapsing",     f: VIX.return_1d, op: "<", t: -5.0, w: 1, k: x}
+      - {n: "Credit improving",          f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Small caps leading",        f: "IWM/SPY.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Credit score positive",     f: score.credit_risk, op: ">", t: 20, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: recession_scare
+    name: "Recession Scare / Growth Scare"
+    tone: orange
+    definition: >
+      The market prices a slowdown: cyclicals and small caps lag, growth-sensitive
+      commodities fall, yields drop and Treasuries rally as investors rotate
+      toward defensives and duration.
+    rules:
+      - {n: "Equities soft",             f: SPY.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "equities are soft"}
+      - {n: "Small caps lag",            f: "IWM/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "small caps lag (cyclical weakness)"}
+      - {n: "Defensives bid",            f: "XLY/XLP.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "staples outperform discretionary"}
+      - {n: "Utilities > industrials",   f: "XLI/XLU.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "utilities outperform industrials"}
+      - {n: "Copper falling",            f: COPPER.return_1d, op: "<", t: 0.0, w: 2, k: c, why: "copper is falling (demand fear)"}
+      - {n: "Oil falling",               f: OIL.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "oil is falling (demand fear)"}
+      - {n: "Treasuries rallying",       f: TLT.return_1d, op: ">", t: 0.0, w: 2, k: c, why: "long Treasuries rally (growth fear)"}
+      - {n: "10Y yield falling",         f: US10Y.change_1d_bps, op: "<", t: 0.0, w: 1, k: c, why: "the 10Y yield is falling"}
+      - {n: "Credit softening",          f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "credit is softening"}
+      - {n: "Growth/defensive score",    f: score.growth_defensive, op: "<", t: -25, w: 1, k: c, why: "defensives lead the growth/defensive score"}
+      - {n: "Commodity score weak",      f: score.commodity_inflation, op: "<", t: -20, w: 1, k: c, why: "the commodity score is weak (demand scare)"}
+      - {n: "Rates pressure negative",   f: score.rates_pressure, op: "<", t: -20, w: 1, k: c, why: "rates are falling (flight to quality)"}
+      # contradictions
+      - {n: "Oil surging",               f: OIL.return_1d, op: ">", t: 2.0, w: 1, k: x}
+      - {n: "Copper surging",            f: COPPER.return_1d, op: ">", t: 1.0, w: 1, k: x}
+      - {n: "Yields jumping",            f: US10Y.change_1d_bps, op: ">", t: 7.0, w: 1, k: x}
+      - {n: "Cyclicals leading",         f: "XLY/XLP.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Small caps leading",        f: "IWM/SPY.return_1d", op: ">", t: 0.0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: inflation_shock
+    name: "Inflation Shock"
+    tone: purple
+    definition: >
+      The market reacts to a perceived rise in inflation: commodities rise, yields
+      rise, bonds sell off and long-duration growth equities tend to suffer.
+    rules:
+      - {n: "Oil surging",               f: OIL.return_1d, op: ">", t: 1.5, w: 2, k: c, why: "oil is surging"}
+      - {n: "Copper rising",             f: COPPER.return_1d, op: ">", t: 1.0, w: 1, k: c, why: "copper is rising"}
+      - {n: "Broad commodities up",      f: DBC.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "broad commodities are up"}
+      - {n: "Energy leads",              f: "XLE/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "energy outperforms"}
+      - {n: "10Y yield rising",          f: US10Y.change_1d_bps, op: ">", t: 5.0, w: 2, k: c, why: "the 10Y yield is rising"}
+      - {n: "Long bonds selling off",    f: TLT.return_1d, op: "<", t: -0.75, w: 1, k: c, why: "long bonds are selling off"}
+      - {n: "Growth lagging",            f: "QQQ/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "growth lags (duration pain)"}
+      - {n: "Rates pressure high",       f: score.rates_pressure, op: ">", t: 30, w: 1, k: c, why: "the rates pressure score is high"}
+      - {n: "Commodity score high",      f: score.commodity_inflation, op: ">", t: 35, w: 1, k: c, why: "the commodity inflation score is high"}
+      - {n: "Firm dollar",               f: USD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "the dollar is firm"}
+      # contradictions
+      - {n: "Oil falling",               f: OIL.return_1d, op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Copper falling",            f: COPPER.return_1d, op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Bonds rallying",            f: TLT.return_1d, op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Yields falling",            f: US10Y.change_1d_bps, op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Growth leading strongly",   f: "QQQ/SPY.return_1d", op: ">", t: 0.5, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: rates_shock
+    name: "Rates Shock / Higher-for-Longer"
+    tone: blue
+    definition: >
+      The dominant driver is rising rates. Duration-sensitive assets suffer even
+      if commodities do not confirm a clean inflation shock.
+    rules:
+      - {n: "10Y yield jumping",         f: US10Y.change_1d_bps, op: ">", t: 5.0, w: 2, k: c, why: "the 10Y yield is jumping"}
+      - {n: "5Y yield jumping",          f: US5Y.change_1d_bps, op: ">", t: 5.0, w: 1, k: c, why: "the 5Y yield is jumping"}
+      - {n: "Long duration hit",         f: TLT.return_1d, op: "<", t: -0.75, w: 2, k: c, why: "long duration is hit"}
+      - {n: "Intermediate duration hit", f: IEF.return_1d, op: "<", t: -0.35, w: 1, k: c, why: "intermediate duration is hit"}
+      - {n: "Growth lagging",            f: "QQQ/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "duration-sensitive growth lags"}
+      - {n: "Semis lagging",             f: "SMH/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "semiconductors lag"}
+      - {n: "Utilities lagging",         f: "XLU/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "rate-sensitive utilities lag"}
+      - {n: "Firmer dollar",             f: USD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "the dollar firms on yields"}
+      - {n: "Rates pressure very high",  f: score.rates_pressure, op: ">", t: 40, w: 1, k: c, why: "the rates pressure score is very high"}
+      - {n: "Equities not strong",       f: score.equity_risk, op: "<=", t: 0, w: 1, k: c, why: "equities are not strong"}
+      # contradictions
+      - {n: "Yields falling",            f: US10Y.change_1d_bps, op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Bonds rallying",            f: TLT.return_1d, op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Growth leading",            f: "QQQ/SPY.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Equities rallying",         f: SPY.return_1d, op: ">", t: 1.0, w: 1, k: x}
+      - {n: "Credit score strong",       f: score.credit_risk, op: ">", t: 30, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: goldilocks
+    name: "Disinflation / Goldilocks"
+    tone: teal
+    definition: >
+      The market likes the combination: equities up, credit positive, volatility
+      down, rates stable or falling, and commodities that are not too
+      inflationary.
+    rules:
+      - {n: "Equities rising",           f: SPY.return_1d, op: ">", t: 0.50, w: 2, k: c, why: "equities are rising"}
+      - {n: "Nasdaq rising",             f: QQQ.return_1d, op: ">", t: 0.50, w: 1, k: c, why: "growth is rising"}
+      - {n: "Credit firm",               f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "credit is firm"}
+      - {n: "Volatility easing",         f: VIX.return_1d, op: "<", t: -3.0, w: 2, k: c, why: "volatility is easing"}
+      - {n: "Yields not rising",         f: US10Y.change_1d_bps, op: "<=", t: 0.0, w: 1, k: c, why: "yields are not rising"}
+      - {n: "Bonds stable/up",           f: TLT.return_1d, op: ">=", t: 0.0, w: 1, k: c, why: "bonds are stable to higher"}
+      - {n: "Soft dollar",               f: USD.return_1d, op: "<=", t: 0.0, w: 1, k: c, why: "the dollar is soft"}
+      - {n: "Oil contained",             f: OIL.return_1d, op: "<", t: 1.5, w: 1, k: c, why: "oil is contained"}
+      - {n: "Equity score positive",     f: score.equity_risk, op: ">", t: 25, w: 1, k: c, why: "the equity risk score is positive"}
+      - {n: "Credit score positive",     f: score.credit_risk, op: ">", t: 20, w: 1, k: c, why: "the credit risk score is positive"}
+      - {n: "Volatility score low",      f: score.volatility_stress, op: "<", t: -20, w: 1, k: c, why: "the volatility stress score is low"}
+      - {n: "Rates pressure soft",       f: score.rates_pressure, op: "<=", t: 0, w: 1, k: c, why: "rates pressure is soft"}
+      # contradictions
+      - {n: "Oil spiking",               f: OIL.return_1d, op: ">", t: 2.5, w: 1, k: x}
+      - {n: "Yields jumping",            f: US10Y.change_1d_bps, op: ">", t: 7.0, w: 1, k: x}
+      - {n: "Volatility spiking",        f: VIX.return_1d, op: ">", t: 5.0, w: 1, k: x}
+      - {n: "Credit deteriorating",      f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Equities falling",          f: SPY.return_1d, op: "<", t: 0.0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: commodity_reflation
+    name: "Commodity Reflation"
+    tone: amber
+    definition: >
+      Commodities rise alongside risk assets. The market reads rising raw
+      materials as a growth signal rather than a negative inflation shock.
+    rules:
+      - {n: "Copper rallying",           f: COPPER.return_1d, op: ">", t: 1.0, w: 2, k: c, why: "copper is rallying"}
+      - {n: "Oil rising",                f: OIL.return_1d, op: ">", t: 1.0, w: 1, k: c, why: "oil is rising"}
+      - {n: "Broad commodities up",      f: DBC.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "broad commodities are up"}
+      - {n: "Energy leads",              f: "XLE/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "energy outperforms"}
+      - {n: "Industrials > utilities",   f: "XLI/XLU.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "industrials outperform utilities"}
+      - {n: "Small caps lead",           f: "IWM/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "small caps lead"}
+      - {n: "EM up",                     f: EEM.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "emerging markets are up"}
+      - {n: "AUD firm",                  f: AUDUSD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "AUD is firm (commodity FX)"}
+      - {n: "Soft dollar",               f: USD.return_1d, op: "<=", t: 0.0, w: 1, k: c, why: "the dollar is soft"}
+      - {n: "Equities not falling",      f: SPY.return_1d, op: ">=", t: 0.0, w: 1, k: c, why: "equities are not falling"}
+      - {n: "Credit not negative",       f: score.credit_risk, op: ">=", t: 0, w: 1, k: c, why: "credit is not negative"}
+      - {n: "Commodity score high",      f: score.commodity_inflation, op: ">", t: 30, w: 1, k: c, why: "the commodity score is high"}
+      # contradictions
+      - {n: "Equities falling",          f: SPY.return_1d, op: "<", t: -0.75, w: 1, k: x}
+      - {n: "Volatility spiking",        f: VIX.return_1d, op: ">", t: 5.0, w: 1, k: x}
+      - {n: "Credit deteriorating",      f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Dollar surging",            f: USD.return_1d, op: ">", t: 0.4, w: 1, k: x}
+      - {n: "Rates pressure extreme",    f: score.rates_pressure, op: ">", t: 50, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: stagflation
+    name: "Stagflation"
+    tone: brown
+    definition: >
+      A bad mix: inflation, commodities and rates rising while risk assets fall.
+      The market prices persistent inflation together with fragile growth.
+    rules:
+      - {n: "Equities falling",          f: SPY.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "equities are falling"}
+      - {n: "Nasdaq falling",            f: QQQ.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "growth is falling"}
+      - {n: "Cyclicals lag",             f: "IWM/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "cyclicals lag"}
+      - {n: "Oil rising into weakness",  f: OIL.return_1d, op: ">", t: 1.0, w: 2, k: c, why: "oil rises into equity weakness"}
+      - {n: "Energy leads",              f: "XLE/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "energy outperforms"}
+      - {n: "Yields rising",             f: US10Y.change_1d_bps, op: ">", t: 0.0, w: 1, k: c, why: "yields are rising"}
+      - {n: "Bonds selling",             f: TLT.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "bonds are selling"}
+      - {n: "Rising stress",             f: VIX.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "volatility is rising"}
+      - {n: "Credit softening",          f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "credit is softening"}
+      - {n: "Firm dollar",               f: USD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "the dollar is firm"}
+      - {n: "Equity score weak",         f: score.equity_risk, op: "<", t: -20, w: 1, k: c, why: "the equity risk score is weak"}
+      - {n: "Commodity score high",      f: score.commodity_inflation, op: ">", t: 25, w: 1, k: c, why: "the commodity score is high"}
+      - {n: "Rates pressure high",       f: score.rates_pressure, op: ">", t: 25, w: 1, k: c, why: "the rates pressure score is high"}
+      # contradictions
+      - {n: "Equities rallying",         f: SPY.return_1d, op: ">", t: 0.75, w: 1, k: x}
+      - {n: "Credit improving",          f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Volatility collapsing",     f: VIX.return_1d, op: "<", t: -5.0, w: 1, k: x}
+      - {n: "Oil falling",               f: OIL.return_1d, op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Rates pressure negative",   f: score.rates_pressure, op: "<", t: 0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: dollar_squeeze
+    name: "Dollar Squeeze / USD Stress"
+    tone: indigo
+    definition: >
+      The dollar rises sharply and pressures global assets, emerging markets,
+      commodities and credit.
+    rules:
+      - {n: "Dollar surging",            f: USD.return_1d, op: ">", t: 0.4, w: 2, k: c, why: "the dollar is surging"}
+      - {n: "EUR weak",                  f: EURUSD.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "the euro is weak"}
+      - {n: "AUD weak",                  f: AUDUSD.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "AUD is weak"}
+      - {n: "EM under pressure",         f: EEM.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "emerging markets are under pressure"}
+      - {n: "EM lagging US",             f: "EEM/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "EM lags US equities"}
+      - {n: "Copper soft",               f: COPPER.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "copper is soft (strong USD)"}
+      - {n: "Gold capped",               f: GOLD.return_1d, op: "<=", t: 0.0, w: 1, k: c, why: "gold is capped by the strong USD"}
+      - {n: "Credit pressured",          f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "credit is pressured"}
+      - {n: "Rising stress",             f: VIX.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "volatility is rising"}
+      - {n: "Dollar stress score high",  f: score.dollar_stress, op: ">", t: 40, w: 1, k: c, why: "the dollar stress score is high"}
+      - {n: "EM stress score elevated",  f: score.em_stress, op: ">", t: 20, w: 1, k: c, why: "the EM stress score is elevated"}
+      # contradictions
+      - {n: "Dollar falling",            f: USD.return_1d, op: "<", t: 0.0, w: 2, k: x}
+      - {n: "EM rallying",               f: EEM.return_1d, op: ">", t: 1.0, w: 1, k: x}
+      - {n: "AUD firm",                  f: AUDUSD.return_1d, op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Copper rallying",           f: COPPER.return_1d, op: ">", t: 1.0, w: 1, k: x}
+      - {n: "Credit improving",          f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: credit_stress
+    name: "Credit / Liquidity Stress"
+    tone: crimson
+    definition: >
+      Stress is visible in credit and liquidity: high yield underperforms,
+      implied spreads widen and volatility rises.
+    rules:
+      - {n: "High yield falling",        f: HYG.return_1d, op: "<", t: -0.5, w: 2, k: c, why: "high yield is falling"}
+      - {n: "HY underperforms IG",       f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 2, k: c, why: "high yield underperforms IG"}
+      - {n: "HY underperforms USTs",     f: "HYG/IEF.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "high yield underperforms Treasuries"}
+      - {n: "IG credit soft",            f: LQD.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "investment grade credit is soft"}
+      - {n: "Volatility spike",          f: VIX.return_1d, op: ">", t: 5.0, w: 1, k: c, why: "volatility is spiking"}
+      - {n: "Equities soft",             f: SPY.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "equities are soft"}
+      - {n: "Dollar bid",                f: USD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "the dollar is bid"}
+      - {n: "Credit score very weak",    f: score.credit_risk, op: "<", t: -35, w: 1, k: c, why: "the credit risk score is very weak"}
+      - {n: "Volatility score high",     f: score.volatility_stress, op: ">", t: 25, w: 1, k: c, why: "the volatility stress score is high"}
+      - {n: "Equity score negative",     f: score.equity_risk, op: "<", t: 0, w: 1, k: c, why: "the equity risk score is negative"}
+      # contradictions
+      - {n: "High yield rising",         f: HYG.return_1d, op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Credit improving",          f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Volatility collapsing",     f: VIX.return_1d, op: "<", t: -5.0, w: 1, k: x}
+      - {n: "Equities rallying",         f: SPY.return_1d, op: ">", t: 0.75, w: 1, k: x}
+      - {n: "Dollar stress negative",    f: score.dollar_stress, op: "<", t: 0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: defensive_rotation
+    name: "Defensive Rotation"
+    tone: slate
+    definition: >
+      The market is not necessarily panicking but repositions toward defensive
+      sectors (staples, healthcare, utilities). Cyclicals and small caps lag.
+    rules:
+      - {n: "Discretionary < staples",   f: "XLY/XLP.return_1d", op: "<", t: 0.0, w: 2, k: c, why: "discretionary underperforms staples"}
+      - {n: "Industrials < utilities",   f: "XLI/XLU.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "industrials underperform utilities"}
+      - {n: "Small caps lag",            f: "IWM/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "small caps lag"}
+      - {n: "Growth not leading",        f: "QQQ/SPY.return_1d", op: "<=", t: 0.0, w: 1, k: c, why: "growth is not leading"}
+      - {n: "Staples outperform",        f: "XLP/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "staples outperform the market"}
+      - {n: "Healthcare outperforms",    f: "XLV/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "healthcare outperforms the market"}
+      - {n: "Utilities outperform",      f: "XLU/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "utilities outperform the market"}
+      - {n: "Growth/defensive score",    f: score.growth_defensive, op: "<", t: -25, w: 1, k: c, why: "defensives lead the growth/defensive score"}
+      - {n: "Equities not strongly bid", f: score.equity_risk, op: "<=", t: 10, w: 1, k: c, why: "equities are not strongly bid"}
+      - {n: "Stress not falling",        f: VIX.return_1d, op: ">=", t: 0.0, w: 1, k: c, why: "volatility is not falling"}
+      # contradictions
+      - {n: "Discretionary leading",     f: "XLY/XLP.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Small caps leading",        f: "IWM/SPY.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Growth leading",            f: "QQQ/SPY.return_1d", op: ">", t: 0.5, w: 1, k: x}
+      - {n: "Volatility collapsing",     f: VIX.return_1d, op: "<", t: -5.0, w: 1, k: x}
+      - {n: "Credit score strong",       f: score.credit_risk, op: ">", t: 20, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: tech_led_risk_on
+    name: "Tech-Led Risk-On"
+    tone: emerald
+    definition: >
+      The rally is led mainly by tech, the Nasdaq, semiconductors and possibly
+      speculative assets.
+    rules:
+      - {n: "Nasdaq leading",            f: QQQ.return_1d, op: ">", t: 0.75, w: 2, k: c, why: "the Nasdaq is leading"}
+      - {n: "Nasdaq > S&P",              f: "QQQ/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "Nasdaq outperforms the S&P"}
+      - {n: "Semis leading",             f: "SMH/SPY.return_1d", op: ">", t: 0.0, w: 2, k: c, why: "semiconductors lead"}
+      - {n: "Tech leading",              f: "XLK/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "technology leads"}
+      - {n: "Crypto risk appetite",     f: BTC.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "crypto shows risk appetite"}
+      - {n: "Volatility easing",         f: VIX.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "volatility is easing"}
+      - {n: "Soft dollar",               f: USD.return_1d, op: "<=", t: 0.0, w: 1, k: c, why: "the dollar is soft"}
+      - {n: "Yields contained",          f: TLT.return_1d, op: ">=", t: 0.0, w: 1, k: c, why: "yields are contained"}
+      - {n: "Credit not negative",       f: score.credit_risk, op: ">=", t: 0, w: 1, k: c, why: "credit is not negative"}
+      - {n: "Tech spec score high",      f: score.tech_speculation, op: ">", t: 35, w: 1, k: c, why: "the tech speculation score is high"}
+      - {n: "Equity score positive",     f: score.equity_risk, op: ">", t: 15, w: 1, k: c, why: "the equity risk score is positive"}
+      # contradictions
+      - {n: "Nasdaq falling",            f: QQQ.return_1d, op: "<", t: 0.0, w: 2, k: x}
+      - {n: "Semis lagging",             f: "SMH/SPY.return_1d", op: "<", t: 0.0, w: 1, k: x}
+      - {n: "Volatility spiking",        f: VIX.return_1d, op: ">", t: 5.0, w: 1, k: x}
+      - {n: "Rates pressure extreme",    f: score.rates_pressure, op: ">", t: 50, w: 1, k: x}
+      - {n: "Credit deteriorating",      f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: safe_haven_bid
+    name: "Safe-Haven Bid"
+    tone: blue
+    definition: >
+      Safe-haven assets are being bought: Treasuries, gold, the yen and sometimes
+      the dollar. This signals demand for protection.
+    rules:
+      - {n: "Treasuries bid",            f: TLT.return_1d, op: ">", t: 0.5, w: 2, k: c, why: "long Treasuries are bid"}
+      - {n: "Intermediate USTs bid",     f: IEF.return_1d, op: ">", t: 0.2, w: 1, k: c, why: "intermediate Treasuries are bid"}
+      - {n: "10Y yield falling",         f: US10Y.change_1d_bps, op: "<", t: 0.0, w: 1, k: c, why: "the 10Y yield is falling"}
+      - {n: "Gold bid",                  f: GOLD.return_1d, op: ">", t: 0.5, w: 2, k: c, why: "gold is bid"}
+      - {n: "Yen strengthening",         f: USDJPY.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "the yen is strengthening"}
+      - {n: "Rising stress",             f: VIX.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "volatility is rising"}
+      - {n: "Equities soft",             f: SPY.return_1d, op: "<=", t: 0.0, w: 1, k: c, why: "equities are soft"}
+      - {n: "Credit soft",               f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "credit is soft"}
+      - {n: "Safe-haven score high",     f: score.safe_haven, op: ">", t: 35, w: 1, k: c, why: "the safe-haven score is high"}
+      - {n: "Rates pressure negative",   f: score.rates_pressure, op: "<", t: 0, w: 1, k: c, why: "rates are falling"}
+      # contradictions
+      - {n: "Treasuries selling",        f: TLT.return_1d, op: "<", t: -0.5, w: 1, k: x}
+      - {n: "Gold falling",              f: GOLD.return_1d, op: "<", t: -0.5, w: 1, k: x}
+      - {n: "Equities rallying",         f: SPY.return_1d, op: ">", t: 1.0, w: 1, k: x}
+      - {n: "Volatility collapsing",     f: VIX.return_1d, op: "<", t: -5.0, w: 1, k: x}
+      - {n: "Credit improving",          f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: energy_supply_shock
+    name: "Energy Supply Shock"
+    tone: amber
+    definition: >
+      Oil rises sharply while the rest of the market turns nervous. The energy
+      move looks more like a cost shock than a healthy reflation.
+    rules:
+      - {n: "WTI surging",               f: OIL.return_1d, op: ">", t: 2.0, w: 2, k: c, why: "WTI crude is surging"}
+      - {n: "Brent surging",             f: BRENT.return_1d, op: ">", t: 2.0, w: 1, k: c, why: "Brent crude is surging"}
+      - {n: "Energy leads",              f: "XLE/SPY.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "energy outperforms"}
+      - {n: "Equities pressured",        f: SPY.return_1d, op: "<=", t: 0.0, w: 1, k: c, why: "equities are pressured"}
+      - {n: "Rising stress",             f: VIX.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "volatility is rising"}
+      - {n: "Discretionary hit",         f: "XLY/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "consumer discretionary is hit"}
+      - {n: "Oil outpaces copper",       f: "OIL/COPPER.return_1d", op: ">", t: 0.0, w: 1, k: c, why: "oil outpaces copper (supply, not demand)"}
+      - {n: "Commodity score high",      f: score.commodity_inflation, op: ">", t: 25, w: 1, k: c, why: "the commodity score is high"}
+      - {n: "Equities not strong",       f: score.equity_risk, op: "<=", t: 0, w: 1, k: c, why: "equities are not strong"}
+      # contradictions
+      - {n: "Equities rallying",         f: SPY.return_1d, op: ">", t: 1.0, w: 1, k: x}
+      - {n: "Credit improving",          f: "HYG/LQD.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Volatility collapsing",     f: VIX.return_1d, op: "<", t: -5.0, w: 1, k: x}
+      - {n: "Copper rallying too",       f: COPPER.return_1d, op: ">", t: 1.5, w: 1, k: x}
+      - {n: "Growth/defensive positive", f: score.growth_defensive, op: ">", t: 25, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: em_stress
+    name: "EM Stress"
+    tone: rose
+    definition: >
+      Emerging markets are under pressure, often driven by a strong dollar, weak
+      commodities and a drop in global risk appetite.
+    rules:
+      - {n: "EM equities falling",       f: EEM.return_1d, op: "<", t: -0.75, w: 2, k: c, why: "EM equities are falling"}
+      - {n: "EM lagging US",             f: "EEM/SPY.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "EM lags US equities"}
+      - {n: "Strong dollar",             f: USD.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "the dollar is strong"}
+      - {n: "AUD weak",                  f: AUDUSD.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "AUD is weak"}
+      - {n: "Copper weak",               f: COPPER.return_1d, op: "<", t: 0.0, w: 1, k: c, why: "copper is weak"}
+      - {n: "Credit soft",               f: "HYG/LQD.return_1d", op: "<", t: 0.0, w: 1, k: c, why: "credit is soft"}
+      - {n: "Rising stress",             f: VIX.return_1d, op: ">", t: 0.0, w: 1, k: c, why: "volatility is rising"}
+      - {n: "EM stress score high",      f: score.em_stress, op: ">", t: 35, w: 1, k: c, why: "the EM stress score is high"}
+      - {n: "Dollar stress elevated",    f: score.dollar_stress, op: ">", t: 20, w: 1, k: c, why: "the dollar stress score is elevated"}
+      # contradictions
+      - {n: "EM rallying",               f: EEM.return_1d, op: ">", t: 1.0, w: 1, k: x}
+      - {n: "EM leading US",             f: "EEM/SPY.return_1d", op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Dollar falling",            f: USD.return_1d, op: "<", t: 0.0, w: 1, k: x}
+      - {n: "AUD firm",                  f: AUDUSD.return_1d, op: ">", t: 0.0, w: 1, k: x}
+      - {n: "Copper rallying",           f: COPPER.return_1d, op: ">", t: 1.0, w: 1, k: x}
+
+  # ---------------------------------------------------------------------------
+  - key: neutral_mixed
+    name: "Neutral / Mixed"
+    tone: gray
+    definition: >
+      No regime clearly dominates. Signals are weak, contradictory or too close
+      together. Its score rises when the strongest regime is weak or when the top
+      two regimes are within a few points of each other.
+    rules: []   # computed from the other regimes (see regime_engine.finalize)
