@@ -1,3 +1,4 @@
 run_date,data_date,primary_regime,primary_score,risk_on_score,risk_off_score,recession_scare_score,inflation_shock_score,rates_shock_score,goldilocks_score,commodity_reflation_score,stagflation_score,dollar_squeeze_score,credit_stress_score,defensive_rotation_score,tech_led_risk_on_score,safe_haven_bid_score,energy_supply_shock_score,em_stress_score,neutral_mixed_score
 2026-06-21,2026-06-21,Disinflation / Goldilocks,85.7,74.4,8.3,36.9,5.4,12.0,85.7,42.9,4.6,34.4,12.0,0.0,84.6,24.0,7.2,15.8,14.3
 2026-06-22,2026-06-22,Defensive Rotation,67.6,15.8,26.0,39.9,43.0,58.3,12.3,28.6,49.1,39.2,38.8,67.6,31.7,14.3,46.5,37.2,32.4
+2026-06-23,2026-06-23,EM Stress,100.0,4.8,77.5,66.4,19.8,31.0,16.9,12.2,49.1,83.3,66.7,84.5,5.4,38.8,50.0,100.0,0.0
